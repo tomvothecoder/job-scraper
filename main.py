@@ -1,3 +1,4 @@
+#%%
 import datetime
 
 import pandas as pd
@@ -6,73 +7,69 @@ from sqlalchemy import create_engine, types
 import requests
 from tqdm import tqdm
 
-engine = create_engine('postgresql://postgres:elm0izc00l@localhost:5432/jobs_db')
+
+def parse_container(containers, parsed_df):
+    """ Parses the containers for the specified fields
+
+    Arguments:
+        containers {[type]} -- containers, which are job posting divs
+        parsed_df {pd.DataFrame} -- dataframe that contains
+            all of the parsed job postings
+
+    Returns:
+        [type] -- [description]
+    """
+    for container in job_containers:
+        columns = {k: find_strip(container, "span", v) for k, v in span_cols.items()}
+        columns["job_title"] = container.a.text
+        columns["date_scrapped"] = today
+        columns["summary"] = find_strip(container, "div", class_="summary")
+        columns['sponsored'] = True if columns["date_posted"] else False
+        parsed_df = parsed_df.append(columns, ignore_index=True)
+    parsed_df = parsed_df.drop_duplicates()
+
+    return parsed_df
 
 
-def main():
-    pages = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100]
+def find_strip(container, tag, class_):
+    """Receives the container (the job posting), and searches
+        the tag for the specified tag. If found, return the text.strip(),
+        else return None.
 
-    for page in tqdm(pages):
-        page_html = requests.get(f'https://www.indeed.com/jobs?q=Software+Developer&l=California&jt=fulltime&explvl=entry_level&sort=date&start={page}')
+    Arguments:
+        container {[type]} -- The indidual job posting container
+        tag {[type]} -- The HTML tag
+        class_ {[type]} -- The HTML class
 
-        content = page_html.content
-        # HTML Parsing
-        soup = bs(content, "html.parser")
-        # print(soup.prettify())
-
-        # Grabs each container
-        job_containers = soup.findAll("div", {"class": "row"})
-
-        # Lists of data scraped from job posting container
-        job_titles = []
-        companies = []
-        locations = []
-        summaries = []
-        job_skills = []
-        dates = []
-        listing_type = []
-        date_scraped = []
-
-        today = datetime.date.today()
-
-        for container in job_containers:
-
-            job_title = container.a.text
-            company = container.find('span', class_='company')
-            location = container.find('span', class_='location')
-            summary = container.find('span', class_='summary')
-            skills = container.find('div', class_='v2Experience')
-            listing_date = container.find('span', class_='date')
-            sponsored = container.find('span', class_=' sponsoredGray ')
-
-            job_titles.append(job_title)
-            companies.append(company.text.strip() if company else "N/A")
-            locations.append(location.text.strip() if location else "N/A")
-            summaries.append(summary.text.strip() if summary else "N/A")
-            job_skills.append(skills.text.strip() if skills else "N/A")
-            listing_type.append(sponsored.text.strip() if sponsored else "Regular listing")
-            dates.append(listing_date.text.strip() if listing_date else "N/A")
-            date_scraped.append(today)
-
-        jobs_df = pd.DataFrame({'job_title': job_titles,
-                                'company': companies,
-                                'location': locations,
-                                'summary': summaries,
-                                'skills': job_skills,
-                                'listing_type': listing_type,
-                                'date': dates,
-                                'date_scraped': date_scraped})
-
-        print("Adding to SQL ...")
-        jobs_df.to_sql("job_listings", engine, if_exists='append', index=False,
-                       dtype={'job_title': types.VARCHAR(255),
-                              'company': types.VARCHAR(255),
-                              'location': types.VARCHAR(255),
-                              'skills': types.VARCHAR(255),
-                              'listing_type': types.VARCHAR(255),
-                              'date': types.VARCHAR(255),
-                              'date_scraped': types.DATE})
+    Returns:
+        [type] -- [description]
+    """
+    found = container.find(tag, class_=class_)
+    if found is None:
+        return None
+    return found.text.strip()
 
 
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    today = datetime.date.today()
+    jobs_df = pd.DataFrame()
+
+    # Query searches and num of pages to search (intervals of 10)
+    searches = ("Software+Engineer", "Software+Developer")
+    pages = range(0, 101, 10)
+    for search in searches:
+        for page in tqdm(pages):
+            page_html = requests.get(
+                f"https://www.indeed.com/jobs?q={search}&sort=date&l=San+Jose%2C+CA&explvl=entry_level&radius=50"
+            )
+            # Grab containers and parse
+            soup = bs(page_html.content, "html.parser")
+            job_containers = soup.findAll("div", {"class": "row"})
+
+            span_cols = {
+                "company": "company",
+                "location": "location",
+                "date_posted": "date",
+            }
+            jobs_df = parse_container(job_containers, jobs_df)
+#%%

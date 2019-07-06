@@ -2,3 +2,9 @@
 \.vscode/launch\.json
 
 \.vscode/settings\.json
+.idea/job-scraper.iml
+.idea/misc.xml
+.idea/vcs.xml
+.idea/modules.xml
+.idea/workspace.xml
+tempCodeRunnerFile.py
