@@ -1,25 +1,16 @@
-#%%
+# %%
 import datetime
+from typing import List
 
 import pandas as pd
 from bs4 import BeautifulSoup as bs
-from sqlalchemy import create_engine, types
 import requests
 from tqdm import tqdm
 
 
-def parse_container(containers, parsed_df):
-    """ Parses the containers for the specified fields
-
-    Arguments:
-        containers {[type]} -- containers, which are job posting divs
-        parsed_df {pd.DataFrame} -- dataframe that contains
-            all of the parsed job postings
-
-    Returns:
-        [type] -- [description]
-    """
-    for container in job_containers:
+def parse_container(containers: List[str], parsed_df: pd.DataFrame) -> pd.DataFrame:
+    """ Parses the containers for the specified fields """
+    for container in containers:
         columns = {k: find_strip(container, "span", v) for k, v in span_cols.items()}
         columns["job_title"] = container.a.text
         columns["date_scrapped"] = today
@@ -31,18 +22,11 @@ def parse_container(containers, parsed_df):
     return parsed_df
 
 
-def find_strip(container, tag, class_):
-    """Receives the container (the job posting), and searches
-        the tag for the specified tag. If found, return the text.strip(),
-        else return None.
-
-    Arguments:
-        container {[type]} -- The indidual job posting container
-        tag {[type]} -- The HTML tag
-        class_ {[type]} -- The HTML class
-
-    Returns:
-        [type] -- [description]
+def find_strip(container: str, tag: str, class_: str) -> str:
+    """
+    Receives the container (the job posting), and searches
+    the tag for the specified tag. If found, return the text.strip(),
+    else return None.
     """
     found = container.find(tag, class_=class_)
     if found is None:
@@ -50,17 +34,24 @@ def find_strip(container, tag, class_):
     return found.text.strip()
 
 
+def parse_postings(df: pd.DataFrame) -> pd.DataFrame:
+    """ Remove spam companies from the dataframe """
+    spam_companies = ['Indeed Prime']
+    return df[~df['company'].isin(spam_companies)]
+
+
 if __name__ == "__main__":
     today = datetime.date.today()
     jobs_df = pd.DataFrame()
 
     # Query searches and num of pages to search (intervals of 10)
-    searches = ("Software+Engineer", "Software+Developer")
+    searches = {"Software+Engineer", "Software+Developer"}
     pages = range(0, 101, 10)
+
     for search in searches:
         for page in tqdm(pages):
             page_html = requests.get(
-                f"https://www.indeed.com/jobs?q={search}&sort=date&l=San+Jose%2C+CA&explvl=entry_level&radius=50"
+                f"https://www.indeed.com/jobs?q={search}&sort=date&l=California&explvl=entry_level&radius=50"
             )
             # Grab containers and parse
             soup = bs(page_html.content, "html.parser")
@@ -71,5 +62,9 @@ if __name__ == "__main__":
                 "location": "location",
                 "date_posted": "date",
             }
+
+
             jobs_df = parse_container(job_containers, jobs_df)
-#%%
+
+    jobs_df = parse_postings(jobs_df)
+# %%
