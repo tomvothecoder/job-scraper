@@ -1,6 +1,6 @@
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import pandas as pd
 import requests
@@ -25,23 +25,10 @@ def parse_date(days_ago: str) -> Optional[str]:
     return days_ago
 
 
-def extract_html_tag(container: bs, tag: str, class_: str) -> Union[str, None]:
-    """Searches a specified tag in a job post container.
-    If the tag is found, return the stripped version of the text.
-    Otherwise return None.
-    """
-
-    found = container.find(tag, class_=class_)
-    if found is None:
-        return None
-    return found.text.strip()
-
-
 class IndeedScraper:
     """A class representing an Indeed scraper."""
 
     def __init__(self, pages=None):
-        # The search queries to be used in requests
         self.job_titles: List[str] = ["CNA", "Certified Nursing Assistant"]
         self.location = "California"
         self.exp_lvl = None
@@ -70,16 +57,21 @@ class IndeedScraper:
         :return: Indeed query URL
         :rtype: str
         """
-
         url = f"https://www.indeed.com/jobs?q={job_title}&l={self.location}&sort=date&start={page}"
         return url
 
     def scrape(self):
+        """Performs HTTP GET request for generated Indeed URL
+
+        :raises TypeError: [description]
+        """
         logger.info("Executing scraper")
 
         for job_title in self.job_titles:
             for page in self.pages:
                 url = self.generate_url(job_title, page)
+
+                # TODO: Add an interval sleep to avoid HTTP requests blockage
                 page_html = requests.get(url)
 
                 if page_html:
@@ -138,11 +130,9 @@ class IndeedScraper:
     def post_processing(self):
         """Parses the dataframe containing all of the job posts.
 
-        The first step is to remove companies that are spam, which is
-        mainly 'Indeed Prime'. Afterwards, duplicate entries are dropped
-        based on the 'company', 'days_ago', and 'title' fields. Often
-        times there are multiple of the same job posting listed on
-        different days which is not useful to search through for the end-user.
+        Duplicate entries are dropped based on the 'company', 'days_ago', and
+        'title' fields. Often times there are multiple of the same job posting
+        listed on different days.
         """
         logger.info("Parsing posts")
 
