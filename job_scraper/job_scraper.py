@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple, TypedDict, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import requests
@@ -16,6 +16,7 @@ class IndeedScraper:
         self.job_titles: List[str] = ["CNA", "Certified Nursing Assistant"]
         self.location = "California"
         self.exp_lvl = None
+        self.radius = None
 
         # Every page contains 10 posts, so iterate in counts of 10
         # self.pages = pages if pages else range(0, 1001, 10)
