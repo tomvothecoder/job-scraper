@@ -135,8 +135,8 @@ class IndeedScraper:
     def save_posts(self):
         """Saves the job posts to CSV and Excel files"""
         today = datetime.now().strftime("%m_%d_%y %H_%M_%S")
-        self.df.to_csv(f"../outputs/jobs_{today}.csv")
-        self.df.to_excel(f"../outputs/jobs_{today}.xlsx")
+        self.df.to_csv(f"../output/jobs_{today}.csv")
+        self.df.to_excel(f"../output/jobs_{today}.xlsx")
 
 
 if __name__ == "__main__":
