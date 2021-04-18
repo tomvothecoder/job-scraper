@@ -125,8 +125,8 @@ class IndeedScraper:
     def save_posts(self):
         """Saves each dataframe row as a record using get_or_create()."""
         today = date.today().strftime("%m_%d_%y")
-        self.df.to_csv(f"jobs_{today}.csv")
-        self.df.to_excel(f"jobs_{today}.xlsx")
+        self.df.to_csv(f"../outputs/jobs_{today}.csv")
+        self.df.to_excel(f"../outputs/jobs_{today}.xlsx")
 
 
 if __name__ == "__main__":
