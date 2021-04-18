@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup as bs
+from typing_extensions import Literal
 
 logger = logging.getLogger(__name__)
 
@@ -12,11 +13,20 @@ logger = logging.getLogger(__name__)
 class IndeedScraper:
     """A class representing an Indeed scraper."""
 
-    def __init__(self, pages=None):
-        self.job_titles: List[str] = ["CNA", "Certified Nursing Assistant"]
-        self.location = "California"
-        self.exp_lvl = None
-        self.radius = None
+    def __init__(
+        self,
+        job_titles: Union[str, List, str],
+        location: str,
+        sort_by: Optional[Literal["relevance", "date"]] = "relevance",
+        exp_lvl: Optional[Literal["entry_level", "mid_level", "senior_level"]] = None,
+        radius: Optional[int] = None,
+        pages=None,
+    ):
+        self.job_titles = job_titles
+        self.location = location
+        self.sort_by = sort_by
+        self.exp_lvl = exp_lvl
+        self.radius = radius
 
         # Every page contains 10 posts, so iterate in counts of 10
         # self.pages = pages if pages else range(0, 1001, 10)
@@ -31,7 +41,14 @@ class IndeedScraper:
         :return: Indeed query URL
         :rtype: str
         """
-        url = f"https://www.indeed.com/jobs?q={job_title}&l={self.location}&sort=date&start={page}"
+        url = f"https://www.indeed.com/jobs?q={job_title}&l={self.location}&sort={self.sort_by}&start={page}"
+
+        if self.exp_lvl:
+            url += f"&explvl={self.exp_lvl}"
+
+        if self.radius:
+            url += f"&radius={self.radius}"
+
         return url
 
     def scrape(self):
@@ -141,4 +158,8 @@ class IndeedScraper:
 
 
 if __name__ == "__main__":
-    scraper = IndeedScraper()
+    scraper = IndeedScraper(
+        job_titles=["CNA", "Certified Nursing Assistant"],
+        location="San Jose California",
+        radius=30,
+    )
