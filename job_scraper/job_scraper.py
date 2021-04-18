@@ -1,6 +1,6 @@
 import logging
 from datetime import date
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import pandas as pd
 import requests
@@ -8,21 +8,6 @@ from bs4 import BeautifulSoup as bs
 
 # Get an instance of a logger
 logger = logging.getLogger(__name__)
-
-
-def parse_date(days_ago: str) -> Optional[str]:
-    """Parses the date field based to return the correct value.
-    If the value is 'Just Posted' or 'Today', set day = 0.
-    """
-    if not days_ago:
-        return None
-
-    if days_ago in {"Just posted", "Active today", "Today"}:
-        days_ago = "0"
-    else:
-        days_ago = days_ago.replace("Active", "")
-
-    return days_ago
 
 
 class IndeedScraper:
@@ -44,7 +29,7 @@ class IndeedScraper:
             "description",
             "days_ago",
             "salary",
-            "link",
+            "url",
         ]
 
         self.df: pd.DataFrame = pd.DataFrame(columns=self.fields)
@@ -96,7 +81,7 @@ class IndeedScraper:
 
             a_tag = container.h2.a
             post_url = a_tag.get("href")
-            fields["link"] = f"https://indeed.com/{post_url}"
+            fields["url"] = f"https://indeed.com/{post_url}"
 
             try:
                 fields["title"] = a_tag.get("title")
@@ -135,9 +120,7 @@ class IndeedScraper:
         listed on different days.
         """
         logger.info("Parsing posts")
-
-        self.df = self.df.dropna(subset=["company"])
-        self.df = self.df.drop_duplicates(subset=["company", "days_ago", "title"])
+        self.df = self.df.drop_duplicates("url")
 
     def save_posts(self):
         """Saves each dataframe row as a record using get_or_create()."""
