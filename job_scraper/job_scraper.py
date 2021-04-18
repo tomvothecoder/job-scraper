@@ -1,10 +1,13 @@
 import logging
 from datetime import datetime
+from random import random
+from time import sleep
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
 import requests
 from bs4 import BeautifulSoup as bs
+from tqdm import tqdm
 from typing_extensions import Literal
 
 logger = logging.getLogger(__name__)
@@ -13,6 +16,8 @@ logger = logging.getLogger(__name__)
 class IndeedScraper:
     """A class representing an Indeed scraper."""
 
+    base_url = "https://indeed.com"
+
     def __init__(
         self,
         job_titles: Union[str, List, str],
@@ -20,7 +25,6 @@ class IndeedScraper:
         sort_by: Optional[Literal["relevance", "date"]] = "relevance",
         exp_lvl: Optional[Literal["entry_level", "mid_level", "senior_level"]] = None,
         radius: Optional[int] = None,
-        pages=None,
     ):
         self.job_titles = job_titles
         self.location = location
@@ -28,28 +32,7 @@ class IndeedScraper:
         self.exp_lvl = exp_lvl
         self.radius = radius
 
-        # Every page contains 10 posts, so iterate in counts of 10
-        # self.pages = pages if pages else range(0, 1001, 10)
-        self.pages = [0, 10]
         self.df: pd.DataFrame = pd.DataFrame()
-
-    def generate_url(self, job_title: str, page: int) -> str:
-        """Generates the Indeed query URL
-
-        :param job_title: Title of the job
-        :type job_title: str
-        :return: Indeed query URL
-        :rtype: str
-        """
-        url = f"https://www.indeed.com/jobs?q={job_title}&l={self.location}&sort={self.sort_by}&start={page}"
-
-        if self.exp_lvl:
-            url += f"&explvl={self.exp_lvl}"
-
-        if self.radius:
-            url += f"&radius={self.radius}"
-
-        return url
 
     def scrape(self):
         """Performs HTTP GET request for generated Indeed URL
@@ -59,41 +42,50 @@ class IndeedScraper:
         logger.info("Executing scraper")
 
         for job_title in self.job_titles:
-            for page in self.pages:
-                url = self.generate_url(job_title, page)
+            url = self.generate_url(job_title)
 
-                # TODO: Add an interval sleep to avoid HTTP requests blockage
+            for i in tqdm(range(10)):
+                logger.info(f"Scrapping URL: {url}")
                 page_html = requests.get(url)
 
-                if page_html:
-                    soup = bs(page_html.text, "html.parser")
-                    containers = soup.findAll("div", "jobsearch-SerpJobCard")
-                    self.parse_containers(containers)
-                else:
-                    raise TypeError(page_html)
+                if not page_html:
+                    break
+
+                soup = bs(page_html.text, "html.parser")
+                containers = soup.findAll("div", "jobsearch-SerpJobCard")
+                self.parse_containers(containers)
+
+                try:
+                    pagination = soup.find("a", {"aria-label": "Next"}).get("href")
+                    url = IndeedScraper.base_url + pagination
+
+                    # Wait a random number of seconds between scrapping
+                    wait_time = random() * 10
+                    print(f"Waiting {wait_time} before scrapping again...")
+                    sleep(wait_time)
+                except AttributeError:
+                    break
 
         self.post_processing()
         self.save_posts()
 
-    def parse_fields_from_html(
-        self, container: bs, html_tag: str, html_class: Union[str, Tuple[str, str]]
-    ) -> Optional[str]:
-        """Parses the raw HTML job container for the target text inside a matched HTML tag and class.
+    def generate_url(self, job_title: str) -> str:
+        """Generates the Indeed query URL
 
-        Args:
-            container (bs): Raw HTML job container
-            html_tag (str): HTML tag that contains target text
-            html_class (Union[str, Tuple[str, str]]): HTML class that contains the target text
-
-        Returns:
-            Optional[str]: [description]
+        :param job_title: Title of the job
+        :type job_title: str
+        :return: Indeed query URL
+        :rtype: str
         """
-        try:
-            if isinstance(html_class, tuple):
-                return container.find(html_tag, html_class[0]).get(html_class[1])
-            return container.find(html_tag, html_class).text.strip()
-        except AttributeError:
-            return None
+        url = f"{IndeedScraper.base_url}/jobs?q={job_title}&l={self.location}&sort={self.sort_by}"
+
+        if self.exp_lvl:
+            url += f"&explvl={self.exp_lvl}"
+
+        if self.radius:
+            url += f"&radius={self.radius}"
+
+        return url
 
     def parse_containers(self, containers: List[bs]):
         """Parses the container with the job information
@@ -135,10 +127,30 @@ class IndeedScraper:
                     container, html_tag, html_class
                 )
 
-            job_post["url"] = f"https://indeed.com/{a_tag.get('href')}"
+            job_post["url"] = f"{IndeedScraper.base_url}{a_tag.get('href')}"
             job_posts.append(job_post)
 
-        self.df = pd.DataFrame(job_posts)
+        self.df = self.df.append(job_posts, ignore_index=True)
+
+    def parse_fields_from_html(
+        self, container: bs, html_tag: str, html_class: Union[str, Tuple[str, str]]
+    ) -> Optional[str]:
+        """Parses the raw HTML job container for the target text inside a matched HTML tag and class.
+
+        Args:
+            container (bs): Raw HTML job container
+            html_tag (str): HTML tag that contains target text
+            html_class (Union[str, Tuple[str, str]]): HTML class that contains the target text
+
+        Returns:
+            Optional[str]: [description]
+        """
+        try:
+            if isinstance(html_class, tuple):
+                return container.find(html_tag, html_class[0]).get(html_class[1])
+            return container.find(html_tag, html_class).text.strip()
+        except AttributeError:
+            return None
 
     def post_processing(self):
         """Parses the dataframe containing all of the job posts.
@@ -159,7 +171,7 @@ class IndeedScraper:
 
 if __name__ == "__main__":
     scraper = IndeedScraper(
-        job_titles=["CNA", "Certified Nursing Assistant"],
+        job_titles=["CNA"],
         location="San Jose California",
         radius=30,
     )
