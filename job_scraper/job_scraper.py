@@ -2,7 +2,7 @@ import logging
 from datetime import datetime
 from random import random
 from time import sleep
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Dict, List, Optional, Tuple, TypedDict, Union
 
 import pandas as pd
 import requests
@@ -11,6 +11,9 @@ from tqdm import tqdm
 from typing_extensions import Literal
 
 logger = logging.getLogger(__name__)
+
+if TYPE_CHECKING:
+    from bs4.element import PageElement, ResultSet
 
 
 class IndeedScraper:
@@ -34,7 +37,7 @@ class IndeedScraper:
 
         self.df: pd.DataFrame = pd.DataFrame()
 
-    def scrape(self):
+    def scrape(self, pages: int = 5):
         """Performs HTTP GET request for generated Indeed URL
 
         :raises TypeError: [description]
@@ -44,7 +47,7 @@ class IndeedScraper:
         for job_title in self.job_titles:
             url = self.generate_url(job_title)
 
-            for i in tqdm(range(10)):
+            for i in tqdm(range(pages)):
                 logger.info(f"Scrapping URL: {url}")
                 page_html = requests.get(url)
 
@@ -52,8 +55,8 @@ class IndeedScraper:
                     break
 
                 soup = bs(page_html.text, "html.parser")
-                containers = soup.findAll("div", "jobsearch-SerpJobCard")
-                self.parse_containers(containers)
+                cards = soup.find_all("div", "jobsearch-SerpJobCard")
+                self.parse_cards(cards)
 
                 try:
                     pagination = soup.find("a", {"aria-label": "Next"}).get("href")
@@ -87,70 +90,77 @@ class IndeedScraper:
 
         return url
 
-    def parse_containers(self, containers: List[bs]):
-        """Parses the container with the job information
+    def parse_cards(self, cards: "ResultSet"):
+        """Parses cards containing the job post information.
 
-        :param containers: Job containers
-        :type containers: List[bs]
+        :param cards: A ResultSet of PageElements.
+        :type cards: ResultSet
         """
 
-        fields: Dict[str, Dict[str, Union[str, Tuple[str, str]]]] = {
+        job_posts: List[Dict[str, Optional[str]]] = []
+
+        for card in cards:
+            job_post = self.parse_html(card)
+            job_posts.append(job_post)
+
+        self.df = self.df.append(job_posts, ignore_index=True)
+
+    def parse_html(self, card: "PageElement") -> Dict[str, Optional[str]]:
+        """Parses the raw HTML job card for the target text inside a matched HTML tag and class.
+
+        :param card: Contains the HTML text for the job card
+        :type card: PageElement
+        :return: [description]
+        :rtype: Dict[str, Optional[str]]
+        """
+
+        job_post: Dict[str, Optional[str]] = {}
+
+        # Parse anchor tag fields first
+        anchor_tag = card.h2.a
+        job_post["url"] = f"{IndeedScraper.base_url}{anchor_tag.get('href')}"
+        try:
+            job_post["title"] = anchor_tag.get("title")
+        except AttributeError:
+            job_post["title"] = None
+
+        HTML_ELEMENT = TypedDict(
+            "HTML_ELEMENT",
+            {
+                "html_tag": str,
+                "html_class": Optional[Union[str, Tuple[str, str]]],
+            },
+        )
+
+        # Parse additional fields
+        fields: Dict[str, HTML_ELEMENT] = {
             "company": {"html_tag": "span", "html_class": "company"},
             "location": {"html_tag": "div", "html_class": ("recJobLoc", "data-rc-loc")},
             "description": {"html_tag": "div", "html_class": "summary"},
             "days_ago": {"html_tag": "span", "html_class": "date"},
             "salary": {"html_tag": "span", "html_class": "salaryText"},
         }
-        job_posts: List[Dict[str, Any]] = []
 
-        for container in containers:
-            job_post: Dict[str, Optional[str]] = {}
-            a_tag = container.h2.a
+        for key, value in fields.items():
+            html_class = value["html_class"]
+            html_tag = value["html_tag"]
 
             try:
-                job_post["title"] = a_tag.get("title")
+                if isinstance(html_class, tuple):
+                    matching_text = card.find(html_tag, html_class[0]).get(
+                        html_class[1]
+                    )
+                else:
+                    matching_text = card.find(html_tag, html_class).text.strip()
             except AttributeError:
-                job_post["title"] = None
-
-            for key, value in fields.items():
-                html_tag = value["html_tag"]
-                html_class: Union[str, Tuple[str, str]] = value["html_class"]
-
-                if (
-                    html_tag is None
-                    or not isinstance(html_tag, str)
-                    or html_class is None
-                ):
-                    raise TypeError
-
-                job_post[key] = self.parse_fields_from_html(
-                    container, html_tag, html_class
+                logger.warn(
+                    f"No HTML element match found for tag={html_tag} and class={html_class}"
                 )
+                matching_text = None
 
-            job_post["url"] = f"{IndeedScraper.base_url}{a_tag.get('href')}"
-            job_posts.append(job_post)
+            job_post[key] = matching_text
 
-        self.df = self.df.append(job_posts, ignore_index=True)
-
-    def parse_fields_from_html(
-        self, container: bs, html_tag: str, html_class: Union[str, Tuple[str, str]]
-    ) -> Optional[str]:
-        """Parses the raw HTML job container for the target text inside a matched HTML tag and class.
-
-        Args:
-            container (bs): Raw HTML job container
-            html_tag (str): HTML tag that contains target text
-            html_class (Union[str, Tuple[str, str]]): HTML class that contains the target text
-
-        Returns:
-            Optional[str]: [description]
-        """
-        try:
-            if isinstance(html_class, tuple):
-                return container.find(html_tag, html_class[0]).get(html_class[1])
-            return container.find(html_tag, html_class).text.strip()
-        except AttributeError:
-            return None
+        return job_post
 
     def post_processing(self):
         """Parses the dataframe containing all of the job posts.
