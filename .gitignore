@@ -145,3 +145,6 @@ tempCodeRunnerFile.py
 output/
 *.csv
 *.xlsx
+
+# Ad-hoc QA
+qa/

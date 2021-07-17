@@ -6,4 +6,5 @@ pandas==1.2.3  # https://github.com/pandas-dev/pandas
 requests==2.25.1  # https://github.com/psf/requests
 requests-oauthlib==1.3.0  # https://github.com/requests/requests-oauthlib
 openpyxl==3.0.7  # https://foss.heptapod.net/openpyxl/openpyxl
-tqdm==4.60.0 # https://github.com/tqdm/tqdm
+tqdm==4.60.0  # https://github.com/tqdm/tqdm
+python-dotenv==0.18.0  # https://pypi.org/project/python-dotenv/
