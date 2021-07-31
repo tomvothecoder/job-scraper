@@ -37,7 +37,7 @@ class IndeedScraper:
     >>> )
     >>> scraper.scrape(pages=5)  # Leave pages blank to scrape all available pages
     >>> print(scraper.df.head())
-                                                        url  ... employer_rating
+                                                        url  ... company_rating
         0  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...            None
         1  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...             3.4
         2  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...             3.0
@@ -63,7 +63,7 @@ class IndeedScraper:
         self.radius_mi = radius_mi
 
         # DataFrame containing the job posts with parsed fields.
-        self.df: pd.DataFrame = pd.DataFrame()
+        self.df: pd.DataFrame = None
 
     def scrape(self, pages: int = 5, output="excel"):
         """Scrapes an Indeed URL for job posts.
@@ -71,7 +71,7 @@ class IndeedScraper:
         This function performs an HTTP GET request for the initial page
         using a URL generated with query parameters. It parses the HTML content
         for all of the existing job containers and performs HTML element matching
-        for the job fields (e.g., title, salary, company).
+        for the job fields (e.g., title, pay, company).
 
         The next page (pagination) is retrieved in the HTML, which is then used
         to perform the next query. There is a random wait time of 0-10 seconds
@@ -81,8 +81,8 @@ class IndeedScraper:
             pages (int, optional): Number of pages to scrape, starting from the
             most recent. Defaults to 5.
         """
-
         logger.info("Executing scraper")
+        self.df = pd.DataFrame()
 
         for job_title in self.job_titles:
             url = self.generate_url_query(job_title)
@@ -106,13 +106,15 @@ class IndeedScraper:
                     # Wait a random number of seconds between scrapping to avoid
                     # HTTP rate limiting.
                     wait_time = random() * 10
-                    print(f"Waiting {wait_time} before scrapping again...")
+                    print(
+                        f"Waiting {round(wait_time,2)} seconds before scrapping again..."
+                    )
                     sleep(wait_time)
                 except AttributeError:
                     # Reached the end
                     break
 
-        self.post_process_df()
+        self.postprocess()
 
     def generate_url_query(self, job_title: str) -> str:
         """Generates a URL for job posts using query parameters.
@@ -160,20 +162,19 @@ class IndeedScraper:
                 "html_class": Optional[Union[str, Tuple[str, str]]],
             },
         )
-
-        job_post: Dict[str, Optional[str]] = {}
-        job_post["url"] = f"{BASE_URL}{container.get('href')}"
-        fields: Dict[str, HTML_ELEMENT] = {
+        FIELDS: Dict[str, HTML_ELEMENT] = {
             "title": {"html_tag": "h2", "html_class": "jobTitle"},
-            "company": {"html_tag": "span", "html_class": "companyName"},
-            "location": {"html_tag": "div", "html_class": "companyLocation"},
             "description": {"html_tag": "div", "html_class": "job-snippet"},
+            "company": {"html_tag": "span", "html_class": "companyName"},
+            "company_rating": {"html_tag": "span", "html_class": "ratingNumber"},
+            "location": {"html_tag": "div", "html_class": "companyLocation"},
             "days_ago": {"html_tag": "span", "html_class": "date"},
-            "salary": {"html_tag": "span", "html_class": "salary-snippet"},
-            "employer_rating": {"html_tag": "span", "html_class": "ratingNumber"},
+            "pay": {"html_tag": "span", "html_class": "salary-snippet"},
         }
 
-        for key, value in fields.items():
+        job_post: Dict[str, Optional[str]] = {}
+
+        for key, value in FIELDS.items():
             html_class = value["html_class"]
             html_tag = value["html_tag"]
 
@@ -192,20 +193,39 @@ class IndeedScraper:
 
             job_post[key] = matching_text
 
+        job_post["url"] = f"{BASE_URL}{container.get('href')}"
         return job_post
 
-    def post_process_df(self):
-        """Parses the dataframe containing all of the job posts.
-
-        Duplicate entries are dropped based on the URL.
-        Often times there are multiple of the same job posting listed on
-        different days.
-        """
+    def postprocess(self):
+        """Parses the dataframe columns for additional metadata."""
         logger.info("Parsing posts")
-        self.df = self.df.drop_duplicates("url")
+
+        # Parse location string into separate fields.
+        self.df["city"] = self.df.location.str.extract(r"(?P<city>.*[A-Z][A-Z])")
+        self.df["zip"] = self.df.location.str.extract(r"(?P<zip>\d\d\d\d\d)")
+        self.df["area"] = self.df.location.str.extract(r"(?P<area>(?<=\().+?(?=\)))")
+
+        # Parse days_ago into an int and calculate when the job was posted since
+        # Indeed doesn't list the dates for when jobs are posted.
+        # TODO: There should be a better way to do this.
+        self.df["days_ago"] = (
+            self.df["days_ago"]
+            .str.replace("Active ", "")
+            .str.replace("Just posted", "0")
+            .str.replace("Today", "0")
+            .str.replace("+", "", regex=False)
+            .str.replace("day ago", "")
+            .str.replace("days ago", "")
+            .str.strip()
+        ).astype(int)
+        self.df["date_scraped"] = pd.to_datetime("now")
+        self.df["date_posted"] = self.df.date_scraped - pd.to_timedelta(
+            self.df.days_ago, unit="d"
+        )
 
     def save(self, output):
         """Saves the job posts to an existing output file."""
+        # TODO: Add date_format
         if output == "excel":
             self.df.to_excel(OUTPUT_FILE)
             print(f"Updated file {OUTPUT_FILE}")
