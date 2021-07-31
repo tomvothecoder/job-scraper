@@ -140,3 +140,11 @@ cython_debug/
 # IDE
 .idea/
 tempCodeRunnerFile.py
+
+# Outputs
+output/
+*.csv
+*.xlsx
+
+# Ad-hoc QA
+qa/
