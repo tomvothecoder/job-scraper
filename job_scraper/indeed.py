@@ -54,7 +54,7 @@ class IndeedScraper:
         location: str,
         sort_by: Optional[Literal["relevance", "date"]] = "relevance",
         exp_lvl: Optional[Literal["entry_level", "mid_level", "senior_level"]] = None,
-        radius_mi: Optional[int] = None,
+        radius_mi: Optional[Literal[5, 10, 15, 25, 50, 100]] = None,
     ):
         self.job_titles = job_titles
         self.location = location
