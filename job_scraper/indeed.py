@@ -222,8 +222,7 @@ class IndeedScraper:
         self.df["date_posted"] = self.df.date_scraped - pd.to_timedelta(
             self.df.days_ago, unit="d"
         )
-
-        # Reorder columns
+        self.df = self.df.assign(date_applied=None, notes=None)
         self.df = self.df[
             [
                 "date_posted",
@@ -238,12 +237,24 @@ class IndeedScraper:
                 "zip",
                 "area",
                 "url",
+                "date_applied",
+                "notes",
             ]
         ]
 
-    def save(self, output):
-        """Saves the job posts to an existing output file."""
-        # TODO: Add date_format
-        if output == "excel":
-            self.df.to_excel(OUTPUT_FILE)
-            print(f"Updated file {OUTPUT_FILE}")
+    def save(self):
+        """Saves the job posts to an output file.
+
+        Output path must be specified in the .env file. This function does
+        concatenates to an existing file and drops duplicates based on the title
+        and url rows.
+        """
+        final_df: pd.DataFrame = pd.read_excel(OUTPUT_FILE, index_col=0)
+        final_df = (
+            pd.concat([final_df, self.df], ignore_index=False, sort=False)
+            .drop_duplicates(["title", "url"], keep="first")
+            .reset_index(drop=True)
+        )
+
+        final_df.to_excel(OUTPUT_FILE)
+        print(f"Updated file {OUTPUT_FILE} with latest jobs.")
