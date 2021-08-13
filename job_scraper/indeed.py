@@ -107,7 +107,7 @@ class IndeedScraper:
                     # HTTP rate limiting.
                     wait_time = random() * 10
                     print(
-                        f"Waiting {round(wait_time,2)} seconds before scrapping again..."
+                        f"\nWaiting {round(wait_time,2)} seconds before scrapping again..."
                     )
                     sleep(wait_time)
                 except AttributeError:
@@ -222,6 +222,24 @@ class IndeedScraper:
         self.df["date_posted"] = self.df.date_scraped - pd.to_timedelta(
             self.df.days_ago, unit="d"
         )
+
+        # Reorder columns
+        self.df = self.df[
+            [
+                "date_posted",
+                "date_scraped",
+                "title",
+                "description",
+                "pay",
+                "company",
+                "company_rating",
+                "location",
+                "city",
+                "zip",
+                "area",
+                "url",
+            ]
+        ]
 
     def save(self, output):
         """Saves the job posts to an existing output file."""
