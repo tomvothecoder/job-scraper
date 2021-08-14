@@ -242,6 +242,7 @@ class IndeedScraper:
 
         # Parse location string into separate fields.
         df["city"] = df.location.str.extract(r"(?P<city>.*[A-Z][A-Z])")
+        # NOTE: These aren't exported, but can be added back in if desired.
         df["zip"] = df.location.str.extract(r"(?P<zip>\d\d\d\d\d)")
         df["area"] = df.location.str.extract(r"(?P<area>(?<=\().+?(?=\)))")
 
@@ -264,17 +265,15 @@ class IndeedScraper:
         df["date_scraped"] = df.date_scraped.dt.date
         df["date_posted"] = df.date_posted.dt.date
 
-        # Add blank columns and sort
+        # Sort order of columns
         df = df[
             [
+                "city",
                 "company",
                 "company_rating",
                 "title",
                 "description",
                 "pay",
-                "city",
-                "zip",
-                "area",
                 "date_posted",
                 "date_scraped",
                 "date_applied",
