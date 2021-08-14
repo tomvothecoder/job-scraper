@@ -11,5 +11,6 @@
   "python.linting.flake8Enabled": true,
   "python.linting.flake8Args": ["--config=setup.cfg"],
   "python.linting.mypyEnabled": true,
-  "python.defaultInterpreterPath": "venv/bin/python"
+  "python.defaultInterpreterPath": "venv/bin/python",
+  "autoDocstring.docstringFormat": "numpy"
 }
