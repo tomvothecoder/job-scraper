@@ -36,7 +36,7 @@ class IndeedScraper:
     >>>     radius_mi=10,
     >>> )
     >>> scraper.scrape(pages=5)  # Leave pages blank to scrape all available pages
-    >>> print(scraper.df.head())
+    >>> print(scraper.df_processed.head())
                                                         url  ... company_rating
         0  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...            None
         1  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...             3.4
@@ -45,27 +45,44 @@ class IndeedScraper:
         4  https://indeed.com/pagead/clk?mo=r&ad=-6NYlbfk...  ...            None
 
         [5 rows x 8 columns]
-    >>> scraper.save(output="excel")
+    >>> scraper.save()
     """
 
     def __init__(
         self,
         job_titles: Union[str, List[str]],
         location: str,
-        sort_by: Optional[Literal["relevance", "date"]] = "relevance",
+        sort_by: Optional[Literal["relevance", "date"]] = "date",
         exp_lvl: Optional[Literal["entry_level", "mid_level", "senior_level"]] = None,
-        radius_mi: Optional[Literal[5, 10, 15, 25, 50, 100]] = None,
+        radius_mi: Optional[Literal[5, 10, 15, 25, 50, 100]] = 25,
     ):
+        """IndeedScraper initialization.
+
+        Parameters
+        ----------
+        job_titles : Union[str, List[str]]
+            The job titles.
+        location : str
+            The location. Should be <CITY>,<STATE> (e.g., San Jose, CA).
+        sort_by : Optional[Literal[, optional
+            Sort by "relevance" or "date", by default "date"
+        exp_lvl : Optional[Literal["entry_level", "mid_level", "senior_level"]]
+            Experience level, by default None (all levels).
+        radius_mi : Optional[Literal[5, 10, 15, 25, 50, 100]], optional
+            Radius in miles around the location, by default 25.
+        """
         self.job_titles = job_titles
         self.location = location
         self.sort_by = sort_by
         self.exp_lvl = exp_lvl
         self.radius_mi = radius_mi
 
-        # DataFrame containing the job posts with parsed fields.
+        # DataFrame containing the job posts with raw fields.
         self.df: pd.DataFrame = None
+        # DataFrame containing the job posts with processed fields.
+        self.df_processed: pd.DataFrame = None
 
-    def scrape(self, pages: int = 5, output="excel"):
+    def scrape(self, pages: int = 5):
         """Scrapes an Indeed URL for job posts.
 
         This function performs an HTTP GET request for the initial page
@@ -77,20 +94,22 @@ class IndeedScraper:
         to perform the next query. There is a random wait time of 0-10 seconds
         to avoid being rate limited by the Indeed server.
 
-        Args:
-            pages (int, optional): Number of pages to scrape, starting from the
-            most recent. Defaults to 5.
+        Set this to a high value such as 1000 to scrape all available pages.
+
+        Parameters
+        ----------
+        pages : int, optional
+            Number of pages to scrape, starting from the most recent, by default 5
         """
-        logger.info("Executing scraper")
         self.df = pd.DataFrame()
 
         for job_title in self.job_titles:
             url = self.generate_url_query(job_title)
 
             for i in tqdm(range(pages)):
-                logger.info(f"Scrapping URL: {url}")
-                page_html = requests.get(url)
+                print(f"\nScrapping page #{i+1}")
 
+                page_html = requests.get(url)
                 if not page_html:
                     break
 
@@ -106,12 +125,11 @@ class IndeedScraper:
                     # Wait a random number of seconds between scrapping to avoid
                     # HTTP rate limiting.
                     wait_time = random() * 10
-                    print(
-                        f"\nWaiting {round(wait_time,2)} seconds before scrapping again..."
-                    )
+                    print(f"Done, waiting {round(wait_time,2)} secs...")
                     sleep(wait_time)
                 except AttributeError:
                     # Reached the end
+                    print(f"\nReached last page (#{i+1}), scrapper complete.")
                     break
 
         self.postprocess()
@@ -119,11 +137,15 @@ class IndeedScraper:
     def generate_url_query(self, job_title: str) -> str:
         """Generates a URL for job posts using query parameters.
 
-        Args:
-            job_title (str): Title of the job.
+        Parameters
+        ----------
+        job_title : str
+            Title of the job.
 
-        Returns:
-            str: URL query.
+        Returns
+        -------
+        str
+            URL query.
         """
         url = (
             f"{BASE_URL}/jobs?q={job_title}"
@@ -138,6 +160,13 @@ class IndeedScraper:
         return url
 
     def parse_containers(self, containers: "ResultSet"):
+        """Parses each HTML container containing job post information.
+
+        Parameters
+        ----------
+        containers : ResultSet
+            A set of HTML job post containers.
+        """
         job_posts: List[Dict[str, Optional[str]]] = []
 
         for card in containers:
@@ -149,12 +178,17 @@ class IndeedScraper:
     def parse_container(self, container: "PageElement") -> Dict[str, Optional[str]]:
         """Parses job card HTML for text matching HTML tag and class.
 
-        Args:
-            container (PageElement): Contains the HTML text for the job post.
+        Parameters
+        ----------
+        container : PageElement
+            Contains the HTML text for the job post.
 
-        Returns:
-            Dict[str, Optional[str]]: Parsed job post fields.
+        Returns
+        -------
+        Dict[str, Optional[str]]
+            Parsed job post fields.
         """
+
         HTML_ELEMENT = TypedDict(
             "HTML_ELEMENT",
             {
@@ -197,19 +231,26 @@ class IndeedScraper:
         return job_post
 
     def postprocess(self):
-        """Parses the dataframe columns for additional metadata."""
-        logger.info("Parsing posts")
+        """Parses the dataframe columns for additional metadata or clean up."""
+        df = self.df.copy()
+
+        # Add user input columns
+        df = df.assign(date_applied=None, notes=None)
+
+        # Update string columns
+        df["title"] = df["title"].str.replace(r"^new", "", regex=True)
 
         # Parse location string into separate fields.
-        self.df["city"] = self.df.location.str.extract(r"(?P<city>.*[A-Z][A-Z])")
-        self.df["zip"] = self.df.location.str.extract(r"(?P<zip>\d\d\d\d\d)")
-        self.df["area"] = self.df.location.str.extract(r"(?P<area>(?<=\().+?(?=\)))")
+        df["city"] = df.location.str.extract(r"(?P<city>.*[A-Z][A-Z])")
+        df["zip"] = df.location.str.extract(r"(?P<zip>\d\d\d\d\d)")
+        df["area"] = df.location.str.extract(r"(?P<area>(?<=\().+?(?=\)))")
 
         # Parse days_ago into an int and calculate when the job was posted since
         # Indeed doesn't list the dates for when jobs are posted.
-        # TODO: There should be a better way to do this.
-        self.df["days_ago"] = (
-            self.df["days_ago"]
+        # NOTE: 30+ days will usually be indicated by exactly 30 day difference
+        # between date_scraped and date_posted
+        df["days_ago"] = (
+            df["days_ago"]
             .str.replace("Active ", "")
             .str.replace("Just posted", "0")
             .str.replace("Today", "0")
@@ -218,43 +259,44 @@ class IndeedScraper:
             .str.replace("days ago", "")
             .str.strip()
         ).astype(int)
-        self.df["date_scraped"] = pd.to_datetime("now")
-        self.df["date_posted"] = self.df.date_scraped - pd.to_timedelta(
-            self.df.days_ago, unit="d"
-        )
-        self.df = self.df.assign(date_applied=None, notes=None)
-        self.df = self.df[
+        df["date_scraped"] = pd.to_datetime("now")
+        df["date_posted"] = df.date_scraped - pd.to_timedelta(df.days_ago, unit="d")
+        df["date_scraped"] = df.date_scraped.dt.date
+        df["date_posted"] = df.date_posted.dt.date
+
+        # Add blank columns and sort
+        df = df[
             [
-                "date_posted",
-                "date_scraped",
+                "company",
+                "company_rating",
                 "title",
                 "description",
                 "pay",
-                "company",
-                "company_rating",
-                "location",
                 "city",
                 "zip",
                 "area",
-                "url",
+                "date_posted",
+                "date_scraped",
                 "date_applied",
                 "notes",
+                "url",
             ]
         ]
+        self.df_processed = df
 
     def save(self):
-        """Saves the job posts to an output file.
+        """Saves the job posts to an Excel output file.
 
-        Output path must be specified in the .env file. This function does
-        concatenates to an existing file and drops duplicates based on the title
-        and url rows.
+        This function concatenates to an existing file and drops duplicates
+        based on the title and url rows. An output file path must be specified
+        in the .env file.
         """
-        final_df: pd.DataFrame = pd.read_excel(OUTPUT_FILE, index_col=0)
-        final_df = (
-            pd.concat([final_df, self.df], ignore_index=False, sort=False)
-            .drop_duplicates(["title", "url"], keep="first")
+        df_current: pd.DataFrame = pd.read_excel(OUTPUT_FILE, index_col=0)
+        df_final = (
+            pd.concat([df_current, self.df_processed], ignore_index=False, sort=False)
+            .drop_duplicates(["title", "company"], keep="first")
             .reset_index(drop=True)
         )
 
-        final_df.to_excel(OUTPUT_FILE)
+        df_final.to_excel(OUTPUT_FILE)
         print(f"Updated file {OUTPUT_FILE} with latest jobs.")
