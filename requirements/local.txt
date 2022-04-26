@@ -14,4 +14,4 @@ mypy==0.812  # https://github.com/python/mypy
 
 # Development Tools
 # ------------------------------------------------------------------------------
-jupyterlab==3.0.14
+jupyterlab==3.0.17
